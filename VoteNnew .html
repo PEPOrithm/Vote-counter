@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>開票カウンター</title>
+<style>
+  :root{
+    --ink:#1c2430;
+    --paper:#f3f1ea;
+    --paper-dim:#e7e3d8;
+    --line:#c9c3b3;
+    --shinnin:#1f6f5c;
+    --shinnin-dim:#e4efe9;
+    --fushinnin:#a8432f;
+    --fushinnin-dim:#f3e6e0;
+    --kesseki:#8a6d1f;
+    --kesseki-dim:#efe8d5;
+    --muko:#5a5a7a;
+    --muko-dim:#e6e5ee;
+    --neutral:#3a4250;
+    --neutral-dim:#e6e5e0;
+    --warn:#b5432f;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--ink);
+    font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+    overscroll-behavior:none;
+    user-select:none;
+  }
+  body{
+    display:flex; flex-direction:column;
+    height:100dvh; width:100vw;
+    color:var(--ink);
+  }
+
+  /* Header */
+  header{
+    flex:0 0 auto;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px;
+    background:var(--ink);
+    color:var(--paper);
+  }
+  header h1{
+    font-size:15px; font-weight:600; margin:0;
+    letter-spacing:0.05em;
+  }
+  header .sub{
+    font-size:10px; color:#8b95a5; margin-top:2px; letter-spacing:0.05em;
+  }
+  #resetBtn{
+    background:transparent; border:1px solid #4a5462; color:#c7cdd6;
+    font-size:12px; padding:7px 12px; border-radius:6px;
+    font-family:inherit; letter-spacing:0.05em;
+  }
+  #resetBtn:active{ background:#2a323f; }
+
+  /* Person tabs */
+  #tabs{
+    flex:0 0 auto;
+    display:flex;
+    background:var(--ink);
+    border-top:1px solid #2a323f;
+  }
+  .tab{
+    flex:1;
+    background:transparent;
+    border:none;
+    color:#8b95a5;
+    font-family:inherit;
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:0.04em;
+    padding:10px 4px;
+    border-bottom:2px solid transparent;
+  }
+  .tab.active{
+    color:var(--paper);
+    border-bottom:2px solid var(--paper);
+  }
+  .tab:active{ background:#2a323f; }
+
+  /* Balance check strip */
+  #balance{
+    flex:0 0 auto;
+    text-align:center;
+    font-size:12px;
+    padding:7px 8px;
+    letter-spacing:0.04em;
+    background:var(--paper-dim);
+    color:#6b6455;
+    border-bottom:1px solid var(--line);
+    transition:background .15s, color .15s;
+  }
+  #balance.mismatch{
+    background:#f4e2dc;
+    color:var(--warn);
+    font-weight:600;
+  }
+  #balance.ok{
+    background:#e4efe9;
+    color:var(--shinnin);
+    font-weight:600;
+  }
+
+  /* Main grid of counters */
+  main{
+    flex:1 1 auto;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:0.8fr 1fr 1fr;
+    background:var(--paper);
+    min-height:0;
+  }
+  main.hidden{ display:none; }
+  .col{
+    display:flex; flex-direction:column;
+    min-width:0; min-height:0;
+    border-right:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+  }
+  .col.count{
+    grid-column:1 / 3;
+    border-right:none;
+  }
+  .col.fushinnin,
+  .col.kesseki{
+    border-right:none;
+  }
+  .col.muko,
+  .col.kesseki{
+    border-bottom:none;
+  }
+
+  .tapzone{
+    flex:1;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    padding:6px 4px;
+    -webkit-user-select:none;
+    touch-action:manipulation;
+    transition:background .08s;
+    position:relative;
+    min-height:0;
+  }
+  .tapzone:active{ background:rgba(0,0,0,0.05); }
+
+  .label{
+    font-size:clamp(11px,3vw,15px);
+    font-weight:700;
+    letter-spacing:0.08em;
+    margin-bottom:2px;
+  }
+  .col.count .label{ color:var(--neutral); }
+  .col.shinnin .label{ color:var(--shinnin); }
+  .col.fushinnin .label{ color:var(--fushinnin); }
+  .col.kesseki .label{ color:var(--kesseki); }
+  .col.muko .label{ color:var(--muko); }
+
+  .number{
+    font-variant-numeric:tabular-nums;
+    font-feature-settings:"tnum";
+    font-family:"SF Mono","Roboto Mono",monospace;
+    font-weight:700;
+    line-height:1;
+    font-size:clamp(28px,10vw,56px);
+    margin:2px 0 4px 0;
+  }
+  .col.count .number{ color:var(--neutral); }
+  .col.shinnin .number{ color:var(--shinnin); }
+  .col.fushinnin .number{ color:var(--fushinnin); }
+  .col.kesseki .number{ color:var(--kesseki); }
+  .col.muko .number{ color:var(--muko); }
+
+  .hint{
+    font-size:9px;
+    color:#9a9484;
+    letter-spacing:0.04em;
+    margin-top:1px;
+  }
+
+  /* tally (正) marks */
+  .tally{
+    display:flex; flex-wrap:wrap; gap:4px;
+    justify-content:center;
+    max-width:100%;
+    padding:0 4px;
+    min-height:16px;
+  }
+  .tally svg{ width:14px; height:17px; display:block; }
+  .tally .partial-wrap{ width:14px; height:17px; }
+
+  /* minus button */
+  .minus{
+    flex:0 0 auto;
+    width:48px; height:28px;
+    margin:4px auto 8px auto;
+    border-radius:14px;
+    border:1px solid var(--line);
+    background:rgba(0,0,0,0.03);
+    font-size:13px;
+    font-weight:600;
+    color:#7a7466;
+    font-family:inherit;
+  }
+  .minus:active{ background:rgba(0,0,0,0.08); }
+
+  /* Compare view */
+  #compareView{
+    flex:1 1 auto;
+    background:var(--paper);
+    overflow-y:auto;
+    padding:14px 12px 24px 12px;
+  }
+  #compareView.hidden{ display:none; }
+  #compareView h2{
+    font-size:13px; color:var(--neutral); margin:0 0 10px 0;
+    letter-spacing:0.04em;
+  }
+  .cmp-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+    background:#fff;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .cmp-table th, .cmp-table td{
+    padding:9px 6px;
+    text-align:center;
+    border-bottom:1px solid var(--line);
+  }
+  .cmp-table th{
+    background:var(--paper-dim);
+    color:var(--neutral);
+    font-weight:700;
+    font-size:11px;
+    letter-spacing:0.03em;
+  }
+  .cmp-table td.cat{
+    text-align:left;
+    font-weight:600;
+    color:var(--neutral);
+    white-space:nowrap;
+  }
+  .cmp-table td.num{
+    font-family:"SF Mono","Roboto Mono",monospace;
+    font-variant-numeric:tabular-nums;
+  }
+  .cmp-table tr.match td.num{ color:var(--shinnin); }
+  .cmp-table tr.mismatch td.num{ color:var(--warn); font-weight:700; }
+  .cmp-table tr.mismatch{ background:#f9efec; }
+  .cmp-note{
+    margin-top:10px;
+    font-size:11px;
+    color:#8b8474;
+    line-height:1.6;
+    text-align:center;
+  }
+
+  footer{
+    flex:0 0 auto;
+    text-align:center;
+    font-size:10px;
+    color:#8b95a5;
+    padding:6px 8px 10px 8px;
+    background:var(--ink);
+    letter-spacing:0.04em;
+  }
+
+  /* modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,24,30,0.55);
+    display:none; align-items:center; justify-content:center;
+    z-index:10; padding:24px;
+  }
+  .overlay.show{ display:flex; }
+  .modal{
+    background:var(--paper); border-radius:10px;
+    padding:20px; max-width:300px; width:100%;
+    text-align:center;
+  }
+  .modal p{ font-size:14px; color:var(--ink); margin:0 0 16px 0; line-height:1.6; }
+  .modal .row{ display:flex; gap:8px; }
+  .modal button{
+    flex:1; padding:10px; border-radius:6px; border:none;
+    font-size:13px; font-weight:600; font-family:inherit;
+  }
+  .modal .cancel{ background:var(--neutral-dim); color:var(--neutral); }
+  .modal .confirm{ background:var(--warn); color:#fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>開票カウンター</h1>
+    <div class="sub">タップで加算 / 下のボタンで1減算</div>
+  </div>
+  <button id="resetBtn">リセット</button>
+</header>
+
+<nav id="tabs">
+  <button class="tab active" data-tab="0">1人目</button>
+  <button class="tab" data-tab="1">2人目</button>
+  <button class="tab" data-tab="2">3人目</button>
+  <button class="tab" data-tab="compare">照合</button>
+</nav>
+
+<div id="balance">投票数と信任+不信任+無効が一致しています</div>
+
+<main id="counterView">
+  <div class="col count">
+    <div class="tapzone" id="tap-count">
+      <div class="label">投票数</div>
+      <div class="number" id="num-count">0</div>
+      <div class="tally" id="tally-count"></div>
+      <div class="hint">総投票数</div>
+    </div>
+    <button class="minus" data-target="count">－1</button>
+  </div>
+
+  <div class="col shinnin">
+    <div class="tapzone" id="tap-shinnin">
+      <div class="label">信任</div>
+      <div class="number" id="num-shinnin">0</div>
+      <div class="tally" id="tally-shinnin"></div>
+      <div class="hint">賛成票</div>
+    </div>
+    <button class="minus" data-target="shinnin">－1</button>
+  </div>
+
+  <div class="col fushinnin">
+    <div class="tapzone" id="tap-fushinnin">
+      <div class="label">不信任</div>
+      <div class="number" id="num-fushinnin">0</div>
+      <div class="tally" id="tally-fushinnin"></div>
+      <div class="hint">反対票</div>
+    </div>
+    <button class="minus" data-target="fushinnin">－1</button>
+  </div>
+
+  <div class="col muko">
+    <div class="tapzone" id="tap-muko">
+      <div class="label">無効</div>
+      <div class="number" id="num-muko">0</div>
+      <div class="tally" id="tally-muko"></div>
+      <div class="hint">無効票</div>
+    </div>
+    <button class="minus" data-target="muko">－1</button>
+  </div>
+
+  <div class="col kesseki">
+    <div class="tapzone" id="tap-kesseki">
+      <div class="label">欠席</div>
+      <div class="number" id="num-kesseki">0</div>
+      <div class="tally" id="tally-kesseki"></div>
+      <div class="hint">欠席者数</div>
+    </div>
+    <button class="minus" data-target="kesseki">－1</button>
+  </div>
+</main>
+
+<div id="compareView" class="hidden">
+  <h2>3人分の照合</h2>
+  <table class="cmp-table">
+    <thead>
+      <tr>
+        <th>項目</th>
+        <th>1人目</th>
+        <th>2人目</th>
+        <th>3人目</th>
+      </tr>
+    </thead>
+    <tbody id="cmpBody"></tbody>
+  </table>
+  <div class="cmp-note">3人の数字がすべて一致していれば緑、<br>1つでも違えば赤で表示されます。</div>
+</div>
+
+<footer>カウントはこの端末・このブラウザに自動保存されます</footer>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <p>3人分のカウントをすべて 0 に戻します。<br>保存されているデータも削除されます。<br>よろしいですか？</p>
+    <div class="row">
+      <button class="cancel" id="cancelReset">キャンセル</button>
+      <button class="confirm" id="confirmReset">リセットする</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = 'kaihyo-counter-state-v4';
+  var KEYS = ['count','shinnin','fushinnin','muko','kesseki'];
+  var LABELS = { count:'投票数', shinnin:'信任', fushinnin:'不信任', muko:'無効', kesseki:'欠席' };
+  var NUM_PEOPLE = 3;
+
+  function freshPerson(){
+    var p = {};
+    KEYS.forEach(function(k){ p[k] = 0; });
+    return p;
+  }
+
+  function loadState(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(Array.isArray(parsed.people) && parsed.people.length === NUM_PEOPLE){
+          var ok = parsed.people.every(function(p){
+            return p && KEYS.every(function(k){ return typeof p[k] === 'number'; });
+          });
+          if(ok){ return { people: parsed.people }; }
+        }
+      }
+    }catch(e){
+      // localStorage が使えない環境（プライベートモード等）ではメモリ上のみで動作
+    }
+    var people = [];
+    for(var i=0;i<NUM_PEOPLE;i++){ people.push(freshPerson()); }
+    return { people: people };
+  }
+
+  function saveState(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){
+      // 保存できなくてもアプリ自体は動作を続ける
+    }
+  }
+
+  var state = loadState();
+  var activePerson = 0; // 0,1,2
+  var activeTab = '0';  // '0','1','2','compare'
+
+  // Stroke paths for a simplified "正" tally glyph, drawn in the
+  // traditional 5-stroke order used for hand tallying in Japan.
+  var STROKES = [
+    "M3 4 H13",
+    "M6 4 V17",
+    "M3 10 H13",
+    "M10 4 V17",
+    "M2 17 H14"
+  ];
+
+  function buildStrokeSVG(activeCount){
+    var svg = '<svg viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">';
+    for(var i=0;i<5;i++){
+      var on = i < activeCount;
+      svg += '<path d="'+STROKES[i]+'" opacity="'+(on?1:0)+'"/>';
+    }
+    svg += '</svg>';
+    return svg;
+  }
+
+  function renderTally(key){
+    var el = document.getElementById('tally-'+key);
+    var n = state.people[activePerson][key];
+    var fullGroups = Math.floor(n/5);
+    var remainder = n%5;
+    var html = '';
+    var shown = Math.min(fullGroups, 6);
+    for(var g=0; g<shown; g++){
+      html += buildStrokeSVG(5);
+    }
+    if(fullGroups > shown){
+      el.innerHTML = html + '<span style="font-size:11px;color:inherit;align-self:center;">+'+(fullGroups-shown)+'</span>' + (remainder>0? buildStrokeSVG(remainder): '');
+      return;
+    }
+    if(remainder>0){
+      html += buildStrokeSVG(remainder);
+    }
+    el.innerHTML = html;
+  }
+
+  function renderNumber(key){
+    document.getElementById('num-'+key).textContent = state.people[activePerson][key];
+  }
+
+  function renderBalance(){
+    var el = document.getElementById('balance');
+    var p = state.people[activePerson];
+    var sum = p.shinnin + p.fushinnin + p.muko;
+    if(p.count === 0 && sum === 0){
+      el.className = '';
+      el.textContent = '投票数と信任+不信任+無効が一致しています';
+      return;
+    }
+    if(sum === p.count){
+      el.className = 'ok';
+      el.textContent = '一致 OK：投票数 '+p.count+' ＝ 信任 '+p.shinnin+' ＋ 不信任 '+p.fushinnin+' ＋ 無効 '+p.muko;
+    } else {
+      var diff = p.count - sum;
+      el.className = 'mismatch';
+      el.textContent = '不一致：投票数と信任+不信任+無効の差 '+ (diff>0? diff : Math.abs(diff)) +' 票（投票数 '+p.count+' / 信任+不信任+無効 '+sum+'）';
+    }
+  }
+
+  function renderCounterView(){
+    KEYS.forEach(function(key){
+      renderNumber(key);
+      renderTally(key);
+    });
+    renderBalance();
+  }
+
+  function renderCompareView(){
+    var body = document.getElementById('cmpBody');
+    var rows = '';
+    KEYS.forEach(function(key){
+      var v0 = state.people[0][key];
+      var v1 = state.people[1][key];
+      var v2 = state.people[2][key];
+      var match = (v0 === v1 && v1 === v2);
+      rows += '<tr class="'+(match?'match':'mismatch')+'">' +
+        '<td class="cat">'+LABELS[key]+'</td>' +
+        '<td class="num">'+v0+'</td>' +
+        '<td class="num">'+v1+'</td>' +
+        '<td class="num">'+v2+'</td>' +
+        '</tr>';
+    });
+    body.innerHTML = rows;
+  }
+
+  function renderAll(){
+    if(activeTab === 'compare'){
+      renderCompareView();
+    } else {
+      renderCounterView();
+    }
+  }
+
+  function inc(key){
+    state.people[activePerson][key] += 1;
+    renderCounterView();
+    saveState();
+  }
+  function dec(key){
+    state.people[activePerson][key] = Math.max(0, state.people[activePerson][key] - 1);
+    renderCounterView();
+    saveState();
+  }
+
+  KEYS.forEach(function(key){
+    document.getElementById('tap-'+key).addEventListener('click', function(){ inc(key); });
+  });
+
+  var minusButtons = document.querySelectorAll('.minus');
+  minusButtons.forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      dec(btn.getAttribute('data-target'));
+    });
+  });
+
+  // Tab switching
+  var counterView = document.getElementById('counterView');
+  var compareView = document.getElementById('compareView');
+  var balanceEl = document.getElementById('balance');
+  var tabButtons = document.querySelectorAll('.tab');
+
+  function setActiveTab(tab){
+    activeTab = tab;
+    tabButtons.forEach(function(btn){
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+    });
+    if(tab === 'compare'){
+      counterView.classList.add('hidden');
+      balanceEl.style.display = 'none';
+      compareView.classList.remove('hidden');
+      renderCompareView();
+    } else {
+      activePerson = parseInt(tab, 10);
+      compareView.classList.add('hidden');
+      counterView.classList.remove('hidden');
+      balanceEl.style.display = '';
+      renderCounterView();
+    }
+  }
+
+  tabButtons.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      setActiveTab(btn.getAttribute('data-tab'));
+    });
+  });
+
+  // Reset flow with custom confirm modal (no window.confirm dependency)
+  var overlay = document.getElementById('overlay');
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    overlay.classList.add('show');
+  });
+  document.getElementById('cancelReset').addEventListener('click', function(){
+    overlay.classList.remove('show');
+  });
+  document.getElementById('confirmReset').addEventListener('click', function(){
+    var people = [];
+    for(var i=0;i<NUM_PEOPLE;i++){ people.push(freshPerson()); }
+    state = { people: people };
+    renderAll();
+    saveState();
+    overlay.classList.remove('show');
+  });
+  overlay.addEventListener('click', function(e){
+    if(e.target === overlay){ overlay.classList.remove('show'); }
+  });
+
+  renderCounterView();
+})();
+</script>
+
+</body>
+</html>
